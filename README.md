@@ -11,5 +11,4 @@ Mais que uma empresa, somos uma família de talentos com paixão pelo digital e 
 
 <br></br>
 
-<img width="330" height="125" alt="Captura de tela 2026-04-14 235423" src="https://github.com/user-attachments/assets/a3a666b7-7c9d-47ee-a2f5-80bc612533eb" />
 
