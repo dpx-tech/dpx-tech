@@ -1,4 +1,4 @@
-# Metodologia de Desenvolvimento — DPX
+# Metodologia de Desenvolvimento - DPX
 
 > Base da metodologia de desenvolvimento da equipe de tecnologia da DPX: como
 > trabalhamos, quais padrões aplicamos e por quê. Serve tanto para apps de uso
