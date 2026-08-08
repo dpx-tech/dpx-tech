@@ -5,7 +5,7 @@
 > **interno** (ex.: ERP, GDX, etc) quanto para **produtos externos**
 > que vão para produção, com usuários e exposição na internet.
 
-**Versão 1.0 · Última atualização: 22/06/2026**
+**Versão 1.1 · Última atualização: 07/08/2026**
 
 ### Como ler este documento
 
@@ -48,7 +48,8 @@ ajustamos quando aprendemos algo melhor.
 A metodologia cobre **dois perfis de projeto**, e a diferença entre eles é o eixo
 que organiza boa parte do documento:
 
-- **Projetos internos**: ferramentas de uso da própria DPX (ERP, GDX e afins). Rodam em ambiente controlado, sem usuários externos.
+- **Projetos internos**: ferramentas de uso da própria DPX (ERP, GDX e afins).
+  Rodam em ambiente controlado, sem usuários externos.
 - **Projetos externos / produção**: produtos que vão para a internet, com
   usuários reais e exposição pública. Aqui o nível de exigência (sobretudo em
   segurança) sobe.
@@ -73,8 +74,9 @@ conjunto e a coerência das decisões; o executor aplica com precisão no códig
 pessoa fica no centro, validando cada etapa.
 
 **O loop de trabalho.** O copiloto desenha a solução e escreve o prompt, a pessoa
-roda esse prompt no executor, cola o retorno de volta, e o copiloto revisa. Cada
-mudança passa por revisão humana antes de seguir.
+roda esse prompt no executor, o executor implementa e emite um **relatório de
+fechamento**, a pessoa cola esse retorno de volta, e o copiloto revisa contra o
+relatório. Cada mudança passa por revisão humana antes de seguir.
 
 **Quando usar.** Em mudanças de peso (novas telas, refatorações, decisões de
 arquitetura), onde a visão de conjunto evita erro. **Quando não.** Em ajuste
@@ -83,23 +85,68 @@ trivial, onde o overhead dos dois papéis não compensa: faça direto.
 > Este é um modelo **recomendado**, não uma norma. Cada pessoa pode adotá-lo no
 > grau que fizer sentido.
 
+#### Quem verifica o quê [BASE]
+
+A divisão de papéis só funciona se ficar claro o que cada um consegue, de fato,
+verificar:
+
+- **O executor verifica o que é automatizável**: lint, typecheck, build,
+  consultas de leitura, greps de conferência.
+- **A pessoa verifica o que exige olho e dispositivo**: comportamento visual,
+  interação, fluxo ponta a ponta, aparência em diferentes tamanhos de tela.
+- **O agente não deve simular o que não pode verificar.** Se ele não tem como
+  abrir um navegador, deve dizer isso no relatório — e a tarefa permanece
+  incompleta até que alguém verifique.
+- **Emulação não substitui o motor real.** O modo dispositivo do navegador roda
+  o mesmo motor do desktop. Comportamento específico de outro motor exige
+  aparelho real, simulador ou serviço de dispositivos remotos.
+
+#### Relatório de fechamento (`/wrap`) [BASE]
+
+**O que é.** Um comando (ou rotina) que o executor roda ao concluir uma tarefa,
+produzindo um relatório padronizado do que foi feito. No nosso setup, vive em
+`.claude/commands/wrap.md`.
+
+**Para que serve.** Dar ao copiloto e à pessoa uma base factual para revisar e
+para reconciliar a documentação. Sem ele, o changelog e o ADR são escritos a
+partir da intenção, não do que de fato mudou.
+
+**O que o relatório precisa conter:**
+
+- **O que mudou**, com base no diff real, não no que se pretendia mudar.
+- **Decisões tomadas** durante a execução, e o porquê de cada uma.
+- **Desvios** do que foi pedido, se houve.
+- **Dívida técnica** gerada ou resolvida.
+- **O que NÃO pôde ser verificado.** O item mais importante da lista: é ele que
+  impede uma tarefa de ser dada como concluída sem a verificação humana.
+- **Candidatos a regra**: aprendizado durável descoberto durante a execução (ver
+  [5.6](#56-rules-e-contexto-para-ia)).
+
+#### Confiança calibrada no agente [BASE]
+
+Agentes erram com confiança. Reportam contagens erradas, afirmam que um arquivo
+está num estado que não está, e concluem por leitura de código aquilo que só o
+navegador ou o banco respondem.
+
+A postura correta: **o relatório do agente é o ponto de partida da revisão, não
+a conclusão dela**. Verificação factual (contagem, estado de arquivo, existência
+de coluna, comportamento em produção) se confirma na fonte, não na afirmação.
+
 ### 2.2 Fluxo de trabalho
 
-As demandas pendentes do dia a dia vivem no **GDX**. Hoje não usamos tracker formal nem revisão por pares obrigatória; a
-estrutura mais completa de PR review e convenção de branches será definida mais
-adiante (ver [decisões em aberto](#7-glossário-e-decisões-em-aberto)).
+As demandas pendentes do dia a dia vivem no **GDX**.
 
 Princípios que já valem:
 
 - **Confirmar o escopo antes de executar.** Deixar claro o que entra e,
   principalmente, o que **não** entra na tarefa. Escopo confirmado evita
   retrabalho. [BASE]
-- **Não desenvolver direto na branch principal quando a aplicação está em
-  produção.** Updates são feitos em uma branch secundária, validados localmente
-  ou em preview, e só então mergeados na principal. **Exceção:** durante o
-  desenvolvimento do MVP, enquanto a aplicação **ainda não está em produção**,
-  trabalhar direto na branch principal é aceitável. A regra passa a valer a
-  partir do momento em que existe ambiente de produção com usuários. [BASE]
+- **Diagnóstico antes de ação que altera estado**, sobretudo em produção (banco,
+  deploy, configuração). Comandos de leitura primeiro; entender o terreno antes
+  de escrever. Pontos de parada explícitos antes de passos arriscados. [BASE]
+
+> A estrutura de branches e a regra de não desenvolver direto na principal estão
+> detalhadas em [2.6](#26-estrutura-de-branches).
 
 ### 2.3 Definition of Done
 
@@ -107,15 +154,29 @@ Uma tarefa só está **concluída** quando os três estão prontos. Pular qualqu
 deixa a tarefa incompleta, por mais que o código funcione. [BASE]
 
 1. **Código** implementado seguindo os padrões deste documento.
+
 2. **Verificação**: lint e typecheck passam; **o build local roda sem erro**
    (não só o servidor de desenvolvimento, que pode esconder erros que só
    aparecem no build de produção); e **todos os cenários possíveis do que foi
-   desenvolvido são testados antes de ir para produção** (ver
-   [Testes](#7-glossário-e-decisões-em-aberto)).
+   desenvolvido são testados antes de ir para produção**.
+
+   A verificação segue a divisão de [2.1](#quem-verifica-o-quê): o que é
+   automatizável fica com o agente, o que exige olho e dispositivo é humano.
+   Quando existe **preview deploy** (ver [2.6](#26-estrutura-de-branches)), a
+   verificação humana acontece nele, não em produção.
+
+   Quando houver **testes E2E automatizados**, eles cobrem os fluxos críticos e
+   reduzem o peso do teste manual — mas não o eliminam para o que acabou de ser
+   desenvolvido.
+
 3. **Documentação reconciliada**: o que mudou de estado no projeto atualiza o
    documento certo (ver [seção 5](#5-documentação-e-organização-do-repositório)).
    Decisão de arquitetura vira ADR; item de roadmap se move; entrega entra no
    changelog; gambiarra vai para a dívida técnica.
+
+   Quando se trabalha com o modelo de [2.1](#21-modelo-copiloto-360--executor-recomendação),
+   o **relatório de fechamento** é o insumo desta etapa: documenta-se a partir do
+   que de fato mudou, não do que se pretendia mudar.
 
 ### 2.4 Spec-Driven Development (SDD)
 
@@ -143,6 +204,100 @@ copy, mudança pequena e óbvia: não precisam de spec.
 geração de changelog e notas de versão. Recomendamos o padrão **Conventional
 Commits**. Referência: https://www.conventionalcommits.org
 
+### 2.6 Estrutura de branches
+
+**O que é.** A organização das branches do repositório e o caminho que uma
+mudança percorre até chegar em produção. [BASE]
+
+**Para que serve.** Garantir que nada chegue a usuários reais sem passar por
+verificação, e permitir que mais de uma pessoa trabalhe no mesmo repositório sem
+atropelamento.
+
+#### O critério que define a estrutura: estar em produção
+
+A estrutura muda em um único ponto: **se existe ou não ambiente de produção
+sendo usado**. Não é sobre ter "lançado" formalmente — é sobre existir gente
+usando.
+
+**Antes de estar em produção**, trabalhar direto na branch principal é aceitável.
+Não há usuário para quebrar, e o overhead de PR atrasa a construção do MVP.
+
+**A partir do momento em que existe produção com usuários**, a estrutura completa
+passa a valer.
+
+> **A transição é um evento datado, não uma percepção gradual.** Alguém precisa
+> dizer "a partir de hoje trabalhamos com branches", registrar isso, e passar a
+> seguir. Sem esse marco explícito, a exceção do MVP se prolonga por inércia — e
+> o primeiro bug que chega a usuário real vem por aí.
+
+#### A estrutura em produção
+
+- **`main`** — o que está em produção. Nunca recebe commit direto.
+- **`dev`** (ou `develop`) — integração do que está pronto e ainda não foi
+  publicado. Opcional em time pequeno, onde as feature branches podem ir direto
+  para `main` via PR.
+- **`feature/*`, `fix/*`, `chore/*`** — uma branch por frente de trabalho,
+  criada a partir de `dev` (ou de `main`, se não houver `dev`).
+
+#### Como manusear
+
+- **Uma branch por frente coesa.** Nome que descreve o que a mudança faz, não o
+  número da tarefa: `fix/modal-mobile`, não `fix/tarefa-42`.
+- **Branch de vida curta.** Quanto mais tempo aberta, mais divergência acumula e
+  mais doloroso é o merge. Se uma frente vai levar semanas, fatie a entrega.
+- **Sincronizar com frequência.** Trazer as mudanças da branch base para a sua
+  antes de abrir o PR, e não no dia do merge.
+- **Deletar a branch após o merge.** Repositório com dezenas de branches mortas
+  esconde as que estão vivas. A limpeza é parte do fechamento.
+
+#### Com mais de uma pessoa no mesmo repositório
+
+- **Cada pessoa em sua própria branch**, mesmo em mudança pequena. Duas pessoas
+  na mesma branch geram conflito sem revisão.
+- **Fatiar por fronteira de arquivo sempre que possível.** Duas frentes que tocam
+  o mesmo arquivo grande vão conflitar; combinar a ordem antes evita o conflito.
+- **Nunca reescrever histórico já publicado** (`--force` sem cuidado, rebase de
+  branch compartilhada). Se precisar desfazer algo já enviado, prefira um commit
+  que reverte.
+- **PR pequeno é revisado; PR gigante é aprovado sem ler.** O tamanho da mudança
+  é o principal fator de qualidade da revisão.
+
+#### O que o fluxo de PR habilita
+
+- **Preview deploy**: cada branch ou PR gera um ambiente igual ao de produção,
+  onde a verificação humana acontece antes do merge.
+- **Portão automático**: ferramentas de análise que rodam em PR (ver
+  [seção 6](#6-ferramentas-recomendadas)) passam a bloquear antes do merge, em
+  vez de reportar depois.
+
+### 2.7 Corte de versão
+
+**O que é.** O ritual de fechar uma versão: consolidar o que mudou, publicar as
+notas e marcar o ponto na história do repositório. [BASE]
+
+**Para que serve.** Ter marcos nomeados e recuperáveis, e comunicar o que mudou
+para quem usa o produto.
+
+**A ordem dos passos** (o detalhamento de cada artefato está em
+[5.3](#53-changelog-versionamento-e-releases)):
+
+1. **CHANGELOG**: o bloco `[Unreleased]` vira `[X.Y.Z] - AAAA-MM-DD`, e um novo
+   `[Unreleased]` vazio é criado acima.
+2. **RELEASE-NOTES**: nova seção, **destilada do changelog**, com o recorte do
+   que o usuário percebe.
+3. **Revisar as premissas condicionais da dívida técnica** (ver
+   [5.2](#tech-debtmd)): itens adiados com justificativa do tipo "não urgente
+   porque ainda não há X" precisam ser reavaliados a cada versão, porque essas
+   condições caem sem aviso.
+4. **Commit e push.**
+5. **Tag anotada** apontando para esse commit, e push da tag.
+6. **Release** a partir da tag, com o corpo recortado do release notes.
+
+> A ordem importa: a tag precisa apontar para o commit que **já contém** o
+> changelog cortado. E a mensagem do commit descreve os arquivos
+> (`docs: corta a versão X.Y.Z`), enquanto a da tag descreve a versão — são
+> textos diferentes, escritos para leitores diferentes.
+
 ---
 
 ## 3. Arquitetura e boas práticas
@@ -159,6 +314,12 @@ Commits**. Referência: https://www.conventionalcommits.org
   negócio e acesso a dados, na medida adequada ao tamanho do projeto.
 - **Estados explícitos.** Todo fluxo trata loading, erro e estado vazio de forma
   explícita. Nunca deixar a interface presa em loading infinito.
+- **Cuidado com o sucesso silencioso.** Erro que aparece é barato: alguém vê e
+  corrige. Operação que **reporta sucesso sem ter agido** é cara, porque
+  sobrevive ao teste, à revisão de código e a meses de produção. Confirme o
+  **efeito** da operação, não apenas a ausência de erro. E dado que é gravado e
+  nunca lido não existe: ao adicionar um campo, percorra o caminho inteiro até
+  quem consome, com dado real.
 
 Apoiamos esses princípios em convenções consagradas, que valem a leitura quando
 houver dúvida sobre como estruturar:
@@ -208,22 +369,116 @@ A regra prática: **decida o modo no início do projeto e não misture**. O pior
 cenário é o meio-termo, onde parte vai por migration e parte na mão, e ninguém
 sabe o que é verdade.
 
+#### Pré-flight antes de mudança destrutiva [BASE]
+
+Antes de aplicar uma migration que remove ou aperta algo em produção:
+
+- **Consulte o dado que será afetado.** Quantas linhas existem, quantas estão
+  preenchidas, quais valores aparecem. Uma coluna vazia se remove sem cerimônia;
+  uma com dado exige plano.
+- **Confirme que não há consumidor.** Busca no código, e também nos artefatos
+  fora do repositório (ver [3.5](#35-código-fora-do-repositório)).
+- **Inventário vem do banco, não do arquivo.** Para saber o que existe em uma
+  tabela, consulte o catálogo do banco, não o arquivo de migration. Arquivo
+  longo é fácil de ler pela metade.
+- **Ponto de parada explícito** antes de aplicar, com o SQL revisado por outra
+  pessoa (ou pelo copiloto) antes da execução.
+
 ### 3.3 Convenções de código [BASE]
 
 - **Contratos de dados explícitos.** Definir e documentar unidades e formatos
   (ex.: tempo em segundos vs. minutos, distância em metros) em um lugar visível.
   Ambiguidade de unidade é fonte recorrente de bug.
+- **Contrato declarado não é contrato verificado.** Tipagem estática não valida o
+  conteúdo de campo dinâmico (JSON no banco, resposta de API externa, payload de
+  webhook): a interface escrita à mão sobre isso é uma **suposição**. Ao mudar o
+  contrato de um campo desses, confirme o tipo real contra o dado antes de
+  confiar na declaração.
+- **Opções de interface derivam do domínio.** Valores de select, enum e
+  radio saem de uma constante compartilhada ou da própria restrição do banco,
+  nunca escritos direto na tela. Caso contrário a interface oferece uma opção que
+  o banco rejeita, e a falha só aparece quando alguém escolhe justamente aquela.
 - **Lógica reutilizável centralizada.** Parse, formatação e conversões moram em
   uma lib compartilhada; não reimplementar inline (gera duplicatas que divergem).
 - **Naming consistente** e previsível em todo o projeto.
 
-### 3.4 Lint e formatação [BASE]
+### 3.4 Lint, formatação e qualidade [BASE]
 
 - **Prettier** para formatação automática, garantindo estilo uniforme sem
   discussão manual. Referência: https://prettier.io
 - **ESLint** para análise estática: pega padrões problemáticos e
   bugs prováveis, não só formatação. Vale adotar como complemento ao Prettier.
   Referência: https://eslint.org
+- **Complexidade ciclomática** como sinal de alerta. É a medida de quantos
+  caminhos possíveis existem dentro de uma função — quanto maior, mais difícil
+  de entender, testar e alterar sem quebrar. Vale configurar um limite no linter
+  e tratar o estouro como gatilho de refatoração, não como erro fatal. Arquivo ou
+  função que cresceu demais é o lugar onde os bugs se escondem.
+
+### 3.5 Código fora do repositório
+
+**O que é.** Lógica de produto que não mora no git: prompt de agente de IA, nó de
+código em ferramenta de automação, configuração feita em painel, regra em serviço
+de terceiro. [BASE]
+
+**Por que merece atenção.** É legítimo e às vezes inevitável, mas quem trabalha
+assim abre mão de quatro coisas que o repositório dá de graça:
+
+- **Histórico e diff.** Não dá para ver o que mudou nem voltar atrás.
+  **Exporte o artefato antes de qualquer alteração** — é o único rollback.
+- **Compartilhamento de código.** Duas automações que precisam da mesma função
+  não a importam: cada uma tem a própria cópia. Corrigir uma e esquecer a outra
+  é o modo de falha padrão, e ele é silencioso. Registre a duplicação como dívida
+  técnica e sincronize à mão de forma deliberada.
+- **Atomicidade com o deploy.** Código e artefato externo não sobem juntos.
+  Durante a janela entre um e outro, o código precisa tolerar as duas versões do
+  contrato.
+- **Alcance do agente de IA.** O executor não enxerga o que está fora do repo.
+  Diagnóstico ali é trabalho humano, e a spec precisa considerar isso ao dividir
+  o escopo.
+
+**Consequência para a documentação.** A spec descreve o **contrato** do artefato
+externo (o que ele recebe, o que devolve, quais regras precisa cumprir), nunca
+copia o texto dele. Spec que copia prompt vira cópia desatualizada no dia
+seguinte à primeira edição.
+
+### 3.6 Observabilidade
+
+**O que é.** A capacidade de saber o que está acontecendo em produção sem
+depender de o usuário relatar. [BASE, com mais peso em EXTERNO]
+
+- **Logging estruturado.** Log em formato consistente e parseável (JSON, com
+  campos fixos: rota, identificador de usuário, ação, resultado), não texto
+  livre. Serve para filtrar e correlacionar depois. **Sem PII e sem dado
+  sensível** no log.
+- **Captura de erro com contexto.** Erro sem contexto (usuário, entrada,
+  operação) só diz que algo quebrou. Com contexto, diz o quê e por quê.
+- **Ausência de sinal não é sinal.** Antes de concluir que um evento não foi
+  registrado, limpe **todos** os filtros do painel de monitoramento, inclusive
+  os de status e período. Um item marcado como resolvido some da visão padrão e
+  parece nunca ter existido.
+- **Distinguir o que é do produto do que é ruído externo.** Relatórios
+  automáticos (violação de CSP, erro de script) captam também conteúdo injetado
+  por navegador e extensão. Filtre o ruído externo na entrada, para que o painel
+  mostre só o que é acionável.
+
+### 3.7 Entrega progressiva e feature flags
+
+**O que é.** Um mecanismo para ligar e desligar funcionalidade em produção sem
+novo deploy. [EXTERNO]
+
+**Para que serve.** Separar o **deploy** (o código estar em produção) da
+**entrega** (a funcionalidade estar disponível). Permite mergear cedo, liberar
+para um subconjunto de usuários, e desligar rápido se algo der errado — sem
+reverter código.
+
+**Quando usar.** Funcionalidade arriscada, mudança que precisa de validação com
+usuários reais, ou release coordenado com outra área. **Quando não.** Projeto
+pequeno e mudança de baixo risco: a flag vira complexidade sem retorno, e flag
+esquecida é dívida técnica que se acumula.
+
+> Toda flag deve ter um plano de remoção. Flag permanente é ramificação
+> permanente no código.
 
 ---
 
@@ -243,6 +498,15 @@ Esta é a seção onde a separação [BASE] / [EXTERNO] mais importa. Referênci
   parâmetros) é validada contra um schema antes de qualquer lógica. A ferramenta
   recomendada é o **Zod** (ver [Ferramentas](#6-ferramentas-recomendadas)).
 - **Tratamento de erro sem vazar detalhe sensível** para o usuário final.
+- **Menor privilégio.** Cada credencial recebe o menor escopo que resolve o
+  problema. Chave de serviço que ignora regras de acesso só existe no servidor,
+  nunca no cliente. Ferramenta de leitura (BI, relatório) usa usuário
+  somente-leitura.
+- **Segurança de dependências.** Auditoria periódica das dependências do projeto.
+  Nem toda vulnerabilidade reportada se aplica ao seu uso — quando a decisão for
+  **aceitar**, registre o racional na dívida técnica, com o vetor analisado. Sem
+  esse registro, alguém "corrige" depois aplicando a sugestão automática da
+  ferramenta, que às vezes é destrutiva.
 
 ### Quando há usuários externos / exposição na web [EXTERNO]
 
@@ -251,25 +515,72 @@ Esta é a seção onde a separação [BASE] / [EXTERNO] mais importa. Referênci
   banco), não só na aplicação. Usar sempre que houver dados por usuário acessíveis
   a partir do cliente; no Supabase, ativar RLS por tabela. Referência:
   https://supabase.com/docs/guides/database/postgres/row-level-security
+- **Autorização, não só autenticação.** Saber **quem** é o usuário não basta:
+  toda operação precisa verificar se ele é dono do recurso que está tocando. Um
+  endpoint que recebe um identificador no corpo da requisição e confia nele está
+  autenticando sem autorizar. A verificação sai da **sessão**, nunca do payload.
 - **CORS (Cross-Origin Resource Sharing).** Controle de quais origens podem
   chamar a API. Restringir às origens legítimas; nunca liberar tudo em produção.
 - **Rate limiting.** Limitar requisições por IP ou usuário em endpoints públicos,
   para conter abuso, brute force e custo. Aplicar nos endpoints públicos
-  sensíveis (login, criação de conta, geração de conteúdo).
+  sensíveis (login, criação de conta, geração de conteúdo). Vale tanto pela
+  segurança quanto pelo **custo**: endpoint que dispara operação cara (LLM,
+  envio de e-mail, processamento pesado) precisa de limite mesmo sem risco de
+  vazamento — o abuso ali gera fatura, não incidente.
+- **Honeypot.** Um campo de formulário invisível ao usuário e visível ao bot: se
+  vier preenchido, a submissão é descartada. Barato, invisível e sem atrito.
+  Primeira linha contra automação simples, antes de partir para captcha.
+- **reCAPTCHA / desafio anti-bot.** Verificação de que há uma pessoa do outro
+  lado. Cobre o bot que respeita o rate limit e ignora o honeypot. Tem custo:
+  adiciona atrito ao usuário legítimo e introduz um terceiro recebendo dado do
+  visitante (implicação de política de privacidade). Avaliar honeypot antes.
+- **Verificação de webhooks (assinatura / HMAC / segredo em header).** Webhooks
+  de terceiros e chamadas entre serviços devem ser autenticados: segredo
+  compartilhado em header, ou HMAC com comparação em tempo constante. Nunca
+  confiar em um webhook sem verificar a origem — o endpoint é público por
+  natureza.
+- **Idempotência em operação que cria recurso caro.** Retry de rede, duplo
+  clique e timeout com resposta perdida geram execução dupla. Onde a operação
+  cobra, gera conteúdo caro ou cria recurso único, o cliente envia uma **chave de
+  idempotência** e o servidor deduplica por ela.
+- **Expiração de sessão.** Definir explicitamente o tempo de vida de sessão e de
+  refresh, proporcional ao uso do produto. Sessão eterna é risco; sessão curta
+  demais em produto de uso esporádico é fricção sem ganho de segurança.
 - **Guardrails e sanitização para LLM.** Quando há um modelo de linguagem no
   fluxo: sanitizar texto livre, isolar dados externos em delimitadores, proteger
   a system message, e validar a resposta contra um schema. Defesa em camadas
   contra prompt injection.
 - **Security headers / CSP** (Content Security Policy, HSTS, X-Frame-Options,
   etc.). Reduzem a superfície de ataque no navegador. Introduzir primeiro em modo
-  somente-relato e depois passar a enforcing.
-- **Verificação de webhooks (assinatura / HMAC).** Webhooks de terceiros e
-  chamadas entre serviços devem ser autenticados (segredo no header, ou HMAC com
-  comparação em tempo constante). Nunca confiar em um webhook sem verificar a
-  origem.
+  somente-relato e depois passar a enforcing — mas **só depois** de revisar os
+  relatórios e confirmar que nenhum recurso legítimo do próprio app está sendo
+  bloqueado.
 - **LGPD / privacidade.** Antes de coletar dado pessoal sensível (ex.: saúde),
-  documentar a base legal e a Política de Privacidade. Praticar **minimização**:
-  dado sensível não vai para ferramentas de analytics.
+  documentar a base legal e a Política de Privacidade — **a política vem antes da
+  coleta**, não depois. Praticar **minimização**: dado sensível e PII não vão
+  para ferramentas de analytics; o identificador pseudonimizado basta para funil
+  e coorte, e o cruzamento com a identidade real acontece no seu banco, não na
+  ferramenta de terceiro.
+- **Consentimento versionado.** Se o produto pede aceite de termos ou política,
+  guarde **qual versão** foi aceita e **quando** — não um booleano. Documentos
+  mudam, e sem a versão não há prova de consentimento nem gatilho de re-aceite.
+
+### Governança de segurança [EXTERNO]
+
+Os itens acima são controles; esta é a prática de mantê-los vivos. Segurança não
+é um checklist que se cumpre uma vez.
+
+- **Auditoria periódica** de dependências e de configuração, com cadência
+  definida (não "quando lembrar").
+- **Checklist antes de expor algo novo**: endpoint público, integração,
+  ferramenta com acesso ao banco.
+- **Triagem do que as ferramentas apontam.** Análise automática gera muito
+  achado já decidido conscientemente. Suprima na própria ferramenta o que está
+  registrado na dívida técnica — senão o painel vira ruído e o achado novo se
+  perde no meio dos conhecidos.
+- **Revisão das premissas de risco.** Item adiado com justificativa condicional
+  ("não urgente porque ainda não há usuários") precisa ser reavaliado quando a
+  condição muda. Ver [2.7](#27-corte-de-versão).
 
 ---
 
@@ -278,6 +589,15 @@ Esta é a seção onde a separação [BASE] / [EXTERNO] mais importa. Referênci
 Documentação não morre por falta de criação, morre por falta de manutenção. A
 regra de ouro: toda tarefa que muda o estado do projeto atualiza o documento
 certo, como parte do [Definition of Done](#23-definition-of-done). [BASE]
+
+Dois princípios sustentam isso:
+
+- **Uma fonte por fato.** Quando a mesma informação vive em dois documentos, uma
+  das cópias envelhece silenciosamente. Escolha o documento dono e faça o outro
+  **apontar** para ele, em vez de repetir.
+- **Premissas envelhecem.** Justificativa condicional ("não urgente porque X",
+  "fazer antes de Y") deixa de valer sem aviso. Revisar as condicionais é parte
+  do corte de versão.
 
 ### 5.1 Nomes e estrutura do repositório
 
@@ -309,6 +629,8 @@ repositorio/
 │   ├── TEMPLATE.md         # modelo de spec
 │   └── 0001-titulo.md      # um arquivo por feature
 └── .claude/
+    ├── commands/
+    │   └── wrap.md         # ritual de fechamento de tarefa
     └── rules/              # convenções carregadas pelo agente de IA
         ├── ways-of-working.md
         ├── code-conventions.md
@@ -318,7 +640,7 @@ repositorio/
 > A pasta `.claude/` e o `CLAUDE.md` são o exemplo concreto para o agente de IA
 > que recomendamos; o nome exato depende da ferramenta adotada (ver
 > [seção 6](#6-ferramentas-recomendadas)). O importante é existir um lugar
-> versionado para regras e contexto da IA.
+> versionado para regras, comandos e contexto da IA.
 
 ### 5.2 Os documentos do projeto
 
@@ -336,8 +658,14 @@ estrutural (como rodar, dependências, scripts). **Onde fica.** Raiz do repo.
 andamento e o que está pendente, na ordem acordada. **Para que serve.** Dar a
 qualquer pessoa, a qualquer momento, a visão de onde o projeto está e para onde
 vai, sem precisar perguntar. **Quando atualizar.** Ao fechar ou mudar um item:
-ele se **move** para a seção de concluídos (mantém-se um registro enxuto do que
-foi entregue). **Onde fica.** `docs/ROADMAP.md`.
+ele se **move** para a seção de concluídos (um registro enxuto do que foi
+entregue). **Onde fica.** `docs/ROADMAP.md`.
+
+> A seção de próximos passos precisa responder "o que fazer agora". Se os itens
+> concluídos ficam nela riscados, ela deixa de responder — daí a regra de mover.
+> Item sem gatilho declarado ("quando houver volume", "a ~100 assinantes") vira
+> gaveta de "algum dia": ao registrar algo que depende de condição, escreva a
+> condição.
 
 #### `TECH-DEBT.md`
 **O que é.** O registro de gambiarras, adiamentos conscientes e riscos
@@ -348,13 +676,19 @@ esquecida. Toda gambiarra criada se registra aqui, e idealmente deixa um marcado
 (registrar) e ao resolvê-la (marcar como resolvida, **sem apagar**: o histórico
 tem valor). **Onde fica.** `docs/TECH-DEBT.md`.
 
+> Diferente do roadmap, aqui o item resolvido **fica onde está**, apenas marcado.
+> O motivo: a causa estrutural de uma dívida costuma continuar viva ao lado dela,
+> e separar os dois perde a conexão. O roadmap é plano (o que fazer); a dívida é
+> inventário de risco (o que existe).
+
 #### `RELEASE-NOTES.md`
 **O que é.** As notas de versão em **linguagem simples**, voltadas ao usuário, e
 não ao desenvolvedor. **Para que serve.** Comunicar o que mudou de forma
 acessível, no corte de cada versão. É sempre **destilado do changelog**, nunca
 escrito do zero (o changelog é a fonte técnica; as release notes são o recorte
 amigável). **Quando atualizar.** No corte de uma versão. **Onde fica.** Raiz do
-repo. Relaciona-se diretamente com o [CHANGELOG](#53-changelog-versionamento-e-releases).
+repo. Detalhamento da régua de recorte em
+[5.3](#53-changelog-versionamento-e-releases).
 
 #### `WAYS-OF-WORKING`
 **O que é.** O documento que descreve **como o time trabalha**, independente do
@@ -372,12 +706,19 @@ um onboarding rápido em uma sessão nova, sem precisar reconstruir o contexto d
 zero a cada vez. **Quando atualizar.** Quando o panorama do projeto muda de forma
 relevante. **Onde fica.** `docs/COPILOT-BRIEFING.md`.
 
+> Este documento descreve o que é **estável** (produto, papéis, arquitetura de
+> memória). O estado vivo do projeto fica no roadmap. Não duplicar estado
+> mutável aqui: envelhece e vira mentira.
+
 #### Arquivo de contexto da IA (ex.: `CLAUDE.md`)
 **O que é.** O mapa do repositório e as regras de base que o agente de IA carrega
 sempre (estrutura de pastas, convenções inegociáveis, armadilhas conhecidas).
 **Para que serve.** Garantir que o agente trabalhe alinhado ao projeto desde o
 primeiro prompt. **Quando atualizar.** Ao mudar a estrutura do repo ou uma regra
 de base. **Onde fica.** Raiz do repo (o nome depende da ferramenta de IA).
+
+> Manter curto. Arquivo carregado em toda sessão que cresce demais deixa de ser
+> lido com atenção; o detalhe vai para as rules, carregadas por escopo.
 
 #### `.env.example`
 **O que é.** A lista de todas as variáveis de ambiente que o projeto precisa, com
@@ -395,6 +736,22 @@ formato **Keep a Changelog**: as mudanças se organizam em seções (`Added`,
 `Changed`, `Fixed`, `Security`) e se acumulam em um bloco `[Unreleased]` até o
 corte da versão. **Onde fica.** Raiz do repo. Referência:
 https://keepachangelog.com
+
+#### As RELEASE-NOTES e a régua de recorte
+
+**O que é.** O recorte do changelog em linguagem de usuário, publicado no corte
+de cada versão.
+
+**A régua:** entra **só o que o usuário percebe na experiência**. Correção
+interna (schema, validação, observabilidade, refactor, configuração) fica apenas
+no changelog, que é o eixo técnico e mantém a rastreabilidade completa.
+
+Consequências dessa régua:
+
+- Uma versão só de correção interna **pode não gerar seção nova** nas release
+  notes, e isso é aceitável.
+- As notas nunca são escritas do zero: são sempre recorte do changelog. Se algo
+  aparece nas notas e não no changelog, o processo foi invertido.
 
 #### As duas formas de versionar (escolha por caso)
 
@@ -427,16 +784,23 @@ venha a expor.
 
 **O que é.** No corte de uma versão, cria-se uma **tag git** (ex.: `v1.2.0`)
 apontando para aquele commit, e publica-se um **release** no GitHub com as notas
-daquela versão (destiladas do changelog / release-notes). **Para que serve.**
-Marcar um ponto fixo e nomeado na história do projeto, fácil de localizar e
-comunicar. **Quando criar.** No fechamento de uma versão (sobe o MARCO/LANÇAMENTO,
-ou MAJOR/MINOR), não a cada commit de correção pequena.
+daquela versão. **Para que serve.** Marcar um ponto fixo e nomeado na história do
+projeto, fácil de localizar, comparar (`git diff v1.1.0..v1.2.0`) e comunicar.
+**Quando criar.** No fechamento de uma versão, não a cada commit de correção
+pequena.
 
-> **Atenção (Cloudflare Workers).** No nosso padrão de deploy, criar uma tag ou um
-> release **não publica em produção**. O deploy de Workers é feito via Wrangler
-> (comando, ou automação futura), não a partir de tag/release do GitHub. Aqui, a
-> tag e o release são um **marco de documentação e comunicação** (registrar a
-> versão e suas notas), não o gatilho de deploy. Não confundir os dois.
+O corpo do release é o recorte das **release notes** (linguagem simples,
+escaneável na página de releases), com um link para o changelog para quem quiser
+o detalhe técnico. Se o corte não gerou seção nas notas, o corpo é uma linha
+apontando para o changelog — nunca vazio.
+
+> **Atenção: tag não é deploy.** Dependendo da plataforma, a publicação em
+> produção acontece por push na branch principal (deploy automático) ou por
+> comando de CLI — não a partir da tag. Aqui, a tag e o release são um **marco de
+> documentação e comunicação**, não o gatilho de publicação. Não confundir os
+> dois, e deixar explícito no README de cada projeto qual é o gatilho real.
+
+> O ritual completo, em ordem, está em [2.7](#27-corte-de-versão).
 
 ### 5.4 ADRs (Architecture Decision Records)
 
@@ -453,6 +817,9 @@ decisão muda, cria-se um novo que marca o anterior como substituído. **Onde
 ficam.** `docs/adr/`, numerados em sequência, a partir de um `TEMPLATE.md`, com um
 `README.md` de índice. Referência: https://adr.github.io
 
+> Registrar as **alternativas rejeitadas** é metade do valor de um ADR. Sem isso,
+> alguém propõe de novo a opção que já foi analisada e descartada.
+
 ### 5.5 Specs (Spec-Driven Development)
 
 **O que é.** O contrato de uma feature, escrito **antes** do código: o que vai ser
@@ -467,6 +834,15 @@ contra ela) → **Implementada** (feita, mantida para referência, linkando os A
 que saíram dela). **Onde ficam.** `specs/`, numeradas em sequência, a partir de um
 `TEMPLATE.md`, com um `README.md` de índice.
 
+Boas práticas que evitam que a spec apodreça:
+
+- **Perguntas abertas explícitas** enquanto o status é Proposta. Se algo não foi
+  decidido, escreva a pergunta em vez de assumir uma resposta.
+- **Ordem obrigatória**, quando os passos têm dependência real entre si — e o
+  porquê da ordem, que costuma ser a informação que se perde.
+- **Pendências não escondidas atrás do "Implementada".** O que não foi verificado
+  fica registrado como pendência, não some no fechamento.
+
 ### 5.6 Rules e contexto para IA
 
 **O que é.** Arquivos de convenção que o agente de IA carrega como contexto em
@@ -479,6 +855,24 @@ trabalha), `code-conventions.md` (convenções de código), `security.md` (regra
 segurança), `migrations.md` (disciplina de banco), e quantos mais o projeto
 precisar. **Onde ficam.** Em um diretório de regras do agente, por exemplo
 `.claude/rules/` (o caminho exato depende da ferramenta de IA adotada).
+
+#### As rules se auto-alimentam
+
+O [relatório de fechamento](#relatório-de-fechamento-wrap) inclui os **candidatos
+a regra**: aprendizado descoberto durante a execução (comportamento de
+ferramenta, mudança de API de biblioteca, pegadinha do ambiente, convenção que
+evita um erro).
+
+Cabe a quem revisa aplicar o **filtro**, e ele tem dois critérios:
+
+- **Durável** — vou precisar disso de novo?
+- **Específico do projeto** — é conhecimento deste projeto, e não algo que
+  qualquer dev reencontra na documentação oficial?
+
+Só o que passa nos dois vira rule. **Destilar, não despejar**: rule inflada deixa
+de ser lida, e aí nenhuma regra é seguida. Colocação: encaixe no arquivo do
+domínio correspondente; crie um arquivo novo só quando surgir um domínio inteiro
+recorrente, nunca para uma regra órfã.
 
 ---
 
@@ -497,9 +891,21 @@ https://developers.cloudflare.com/workers/
 
 ### Wrangler — CLI de deploy (padrão DPX) [BASE]
 A ferramenta de linha de comando da Cloudflare para desenvolver, testar e
-publicar Workers. Serve para fazer o build e o deploy a partir do ambiente local
-(hoje, via VS Code). É como, na prática, uma aplicação chega à Cloudflare.
+publicar Workers. Serve para fazer o build e o deploy a partir do ambiente local.
+É como, na prática, uma aplicação chega à Cloudflare quando o deploy é manual.
 Referência: https://developers.cloudflare.com/workers/wrangler/
+
+### Cloudflare Builds — deploy automático [BASE]
+Integração da Cloudflare com o repositório: a cada push, o build e o deploy
+acontecem automaticamente, sem comando manual. Serve para eliminar o passo de
+publicação manual (e o risco de esquecer de publicar, ou de publicar de uma
+máquina com estado local diferente). Combina com a
+[estrutura de branches](#26-estrutura-de-branches): a branch principal publica em
+produção, e as demais podem gerar ambientes de preview para verificação antes do
+merge. Referência: https://developers.cloudflare.com/workers/ci-cd/builds/
+
+> Com deploy automático, o gatilho de publicação é o **push**, não a tag. Ver a
+> nota em [5.3](#tags-e-releases-no-repositório).
 
 ### Supabase — banco de dados e autenticação (padrão DPX) [BASE]
 Plataforma sobre Postgres que entrega banco de dados, autenticação, RLS e uma API
@@ -525,9 +931,22 @@ https://docs.sentry.io
 Plataforma de analytics de produto: eventos, funis de conversão e comportamento de
 uso. Serve para entender como as pessoas usam o produto e onde abandonam. Faz
 sentido sobretudo em produtos externos, onde há uma base de usuários para medir;
-em ferramenta interna, raramente se justifica. Atenção à minimização de dados
-(dado sensível não deve ser enviado para o analytics). Referência:
+em ferramenta interna, raramente se justifica. Referência:
 https://posthog.com/docs
+
+> **Client-side ou server-side?** A captura no **cliente** (navegador) é rica em
+> contexto de navegação — origem, campanha, dispositivo, sequência de telas — mas
+> é **bloqueada por ad blockers**, com perda relevante de eventos. A captura no
+> **servidor** não é bloqueada e é confiável, mas perde o contexto de navegação e
+> exige enviar cada evento explicitamente. O critério prático é o **valor do
+> evento**: conversão, pagamento e assinatura vão pelo servidor, porque não podem
+> se perder; comportamento de navegação vai pelo cliente, onde o contexto
+> importa mais que a completude. Um proxy reverso no seu próprio domínio recupera
+> parte dos eventos de cliente bloqueados, e é uma alternativa ao server-side
+> para os eventos que não justificam a instrumentação no backend.
+>
+> **Atenção à minimização**: dado sensível e PII não devem ser enviados para o
+> analytics, em nenhum dos dois modos (ver [seção 4](#4-segurança)).
 
 ### Upstash Redis — rate limiting e cache [EXTERNO]
 Redis serverless, cobrado por uso, que usamos sobretudo para **rate limiting** de
@@ -546,40 +965,100 @@ indo além da formatação. Serve como uma rede de segurança que pega erro ante
 rodar. Recomendado como complemento ao Prettier em todo projeto. Referência:
 https://eslint.org
 
+### SonarCloud — qualidade e manutenibilidade [BASE]
+Plataforma de análise contínua de qualidade de código: duplicação, complexidade,
+code smells, cobertura e pontos de segurança. Serve para acompanhar a saúde do
+código ao longo do tempo, não só o erro pontual. **Roda em pull request**, o que a
+torna a peça que transforma a revisão em portão automático antes do merge (ver
+[2.6](#26-estrutura-de-branches)). Referência: https://docs.sonarsource.com
+
+### Aikido — segurança do repositório [EXTERNO]
+Plataforma de varredura de segurança sobre o código e as dependências: CVEs em
+bibliotecas, segredos expostos no repositório, configuração insegura, padrões de
+código com risco. Serve como uma segunda camada além da revisão humana. Roda em
+varredura periódica, então funciona como **relatório recorrente**, não como
+portão de merge. Referência: https://apidocs.aikido.dev
+
+> Vale para SonarCloud e Aikido: ferramenta de análise aponta muita coisa já
+> decidida conscientemente. Suprima na própria ferramenta o que está registrado
+> na dívida técnica, com o racional — senão o painel vira ruído e o achado novo
+> se perde no meio dos conhecidos.
+
+### Grafana + Prometheus — métricas de infraestrutura [EXTERNO]
+Prometheus coleta e armazena métricas em série temporal; Grafana as visualiza em
+painéis e dispara alertas. Servem para monitorar **infraestrutura própria**:
+uso de CPU e memória, latência, filas, disponibilidade de serviço. Fazem sentido
+quando existe servidor ou serviço self-hosted sob nossa responsabilidade (VPS,
+container, automação hospedada). Em stack totalmente gerenciada (serverless +
+banco gerenciado), a métrica de infraestrutura vem do painel do provedor e essa
+dupla costuma ser complexidade desnecessária. Não confundir com Sentry
+(erro de aplicação) nem PostHog (comportamento de usuário): são três perguntas
+diferentes. Referências: https://grafana.com/docs e https://prometheus.io/docs
+
 ---
 
 ## 7. Glossário e decisões em aberto
 
 ### Glossário
 
-- **[BASE] / [EXTERNO]**: marcação de onde um item se aplica (todo projeto vs.
-  projetos com usuários externos).
-- **ADR**: Architecture Decision Record, registro de decisão de arquitetura.
-- **Spec / SDD**: contrato de feature escrito antes do código (Spec-Driven
-  Development).
-- **DoD**: Definition of Done, a definição de quando uma tarefa está concluída.
-- **Expand/contract**: estratégia de mudança de schema em duas etapas (aditiva,
-  depois destrutiva) para não quebrar produção.
-- **RLS**: Row Level Security, regras de acesso por linha no banco.
-- **CSP**: Content Security Policy, política de segurança no navegador.
-- **HMAC**: assinatura criptográfica para verificar a origem de uma mensagem.
-- **SemVer**: Semantic Versioning, versionamento por compatibilidade técnica.
-- **kebab-case**: palavras minúsculas separadas por hífen (ex.: `gestor-de-demandas`).
+Termos citados ao longo do documento **sem explicação no próprio texto**. O que
+já é definido onde aparece não se repete aqui.
+
+- **PII** (*Personally Identifiable Information*): dado que identifica uma pessoa
+  diretamente — nome, e-mail, telefone, CPF, endereço.
+- **PR** (*pull request*): proposta de incorporar as mudanças de uma branch em
+  outra, aberta para revisão antes do merge.
+- **Rebase**: reescrever a base de uma branch sobre outra, reaplicando os
+  commits. Muda o histórico, por isso é perigoso em branch compartilhada.
+- **MVP** (*Minimum Viable Product*): a menor versão do produto que já entrega
+  valor e permite validar a ideia com usuários.
+- **LLM** (*Large Language Model*): modelo de linguagem de grande porte, como os
+  que usamos nos agentes de IA.
+- **Prompt injection**: ataque em que texto malicioso vindo do usuário (ou de um
+  dado externo) é interpretado pelo modelo como instrução, alterando seu
+  comportamento.
+- **HMAC**: assinatura criptográfica calculada com um segredo compartilhado, usada
+  para verificar que uma mensagem veio de quem diz ter vindo e não foi alterada.
+- **Security headers**: cabeçalhos HTTP que restringem o que o navegador pode
+  fazer com a página. **CSP** limita de onde scripts, estilos e fontes podem ser
+  carregados; **HSTS** obriga o uso de HTTPS; **X-Frame-Options** impede que a
+  página seja embutida em um iframe de terceiro.
+- **CVE** (*Common Vulnerabilities and Exposures*): identificador público de uma
+  vulnerabilidade conhecida (ex.: `CVE-2024-1234`), usado pelas ferramentas de
+  auditoria de dependências.
+- **Code smell**: trecho de código que funciona mas indica problema de desenho —
+  duplicação, função gigante, aninhamento excessivo. Não é bug; é sinal de que
+  vai virar um.
+- **Serverless**: modelo de execução em que o código roda sob demanda em
+  infraestrutura gerenciada pelo provedor, sem servidor para manter, com escala
+  automática e cobrança por uso.
+- **Proxy reverso**: servidor intermediário que recebe as requisições em nome de
+  outro serviço. No contexto de analytics, serve para que os eventos saiam pelo
+  seu próprio domínio, escapando de bloqueadores.
+- **Pseudonimizado**: dado em que a identidade direta foi substituída por um
+  identificador (ex.: um UUID), de modo que só é possível chegar à pessoa
+  cruzando com outra base sob seu controle.
+- **LGPD**: Lei Geral de Proteção de Dados (Lei 13.709/2018), que regula o
+  tratamento de dados pessoais no Brasil.
+- **Dump**: cópia do estado atual de um banco de dados (estrutura e/ou conteúdo),
+  em arquivo, que permite recriá-lo em outro lugar.
+- **kebab-case**: palavras minúsculas separadas por hífen (ex.:
+  `gestor-de-demandas`).
 
 ### Decisões em aberto
 
 Itens que a DPX ainda não fechou e vai detalhar mais adiante. Ficam listados aqui,
 de forma honesta, em vez de fixar um padrão prematuro:
 
-- **Convenção de branches e PR review.** Hoje trabalhamos em branch secundária e
-  validamos antes do merge na principal (com a exceção do MVP, ver
-  [2.2](#22-fluxo-de-trabalho)), mas sem um fluxo formal de revisão por pares. A
-  estrutura completa (nomes de branch, regras de PR, quem aprova) será definida.
-- **Estratégia de testes.** Por ora, a regra é testar todos os cenários possíveis
-  do que está sendo desenvolvido antes de ir para produção. Uma estrutura mais
-  completa (testes automatizados, cobertura, CI) virá depois.
-- **CI/CD.** O deploy hoje é feito via Wrangler no VS Code. Automatizar
-  build/deploy (e quando vale) é uma decisão futura.
+- **Estratégia de testes.** A ferramenta e o conceito estão indicados (testes E2E
+  automatizados para fluxos críticos), mas a estratégia não: o que se testa, que
+  cobertura se persegue, quando os testes rodam, e em que ponto passam a ser
+  bloqueantes. Por ora, a regra continua sendo testar todos os cenários possíveis
+  do que está sendo desenvolvido antes de ir para produção.
+- **Regras de aprovação de PR.** A estrutura de branches está definida
+  ([2.6](#26-estrutura-de-branches)), mas quem aprova, quantas aprovações são
+  necessárias e quais verificações são bloqueantes ainda dependem do tamanho de
+  cada time.
 
 ---
 
