@@ -208,10 +208,29 @@ copy, mudança pequena e óbvia: não precisam de spec.
 > O formato, o ciclo de vida e a localização das specs estão detalhados em
 > [Documentação e organização do repositório](#55-specs).
 
-### 2.5 Convenções de commit
+### 2.5 Commits: autoria e convenções
+
+#### Trabalhe pela sua própria conta [BASE]
+
+**O que é.** Cada pessoa que vai trabalhar em um repositório da empresa é
+adicionada como **colaborador** com a própria conta do GitHub, e commita por ela.
+Não se desenvolve usando a conta da organização.
+
+**Para que serve.** O histórico do repositório passa a registrar quem fez o quê,
+e isso importa em três momentos: rastrear a origem de uma mudança quando algo
+quebra, saber com quem falar durante uma revisão, e atribuir o trabalho a quem o
+fez. Commit assinado pela conta da empresa apaga essa informação, e o histórico
+deixa de servir como registro.
+
+**Nota prática.** Vale ativar o **watch** no repositório em que se está
+trabalhando, para receber notificação de novas alterações. É útil quando mais de
+uma pessoa toca o mesmo projeto, ou quando se quer acompanhar o que entra em
+produção. Em repositório que se toca esporadicamente, o ruído não compensa.
+
+#### Convenções de mensagem [BASE]
 
 **O que é.** Um padrão de mensagem de commit que comunica a natureza da mudança
-(`feat`, `fix`, `docs`, `refactor`, `chore`, etc.). [BASE]
+(`feat`, `fix`, `docs`, `refactor`, `chore`, etc.).
 
 **Para que serve.** Histórico legível, fácil de auditar, e que pode alimentar a
 geração de changelog e notas de versão. Recomendamos o padrão **Conventional
