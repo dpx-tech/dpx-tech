@@ -5,7 +5,7 @@
 > **interno** (ex.: ERP, GDX, etc) quanto para **produtos externos**
 > que vão para produção, com usuários e exposição na internet.
 
-**Versão 1.1 · Última atualização: 08/08/2026**
+**Versão 1.2 · Última atualização: 15/10/2026**
 
 ### Como ler este documento
 
@@ -156,8 +156,9 @@ Princípios que já valem:
   deploy, configuração). Comandos de leitura primeiro; entender o terreno antes
   de escrever. Pontos de parada explícitos antes de passos arriscados. [BASE]
 
-> A estrutura de branches e a regra de não desenvolver direto na principal estão
-> detalhadas em [2.6](#26-estrutura-de-branches).
+> A estrutura de branches, a regra de não desenvolver direto na principal e a
+> exceção para projetos internos estão detalhadas em
+> [2.6](#26-estrutura-de-branches).
 
 ### 2.3 Definition of Done
 
@@ -170,9 +171,10 @@ deixa a tarefa incompleta, por mais que o código funcione. [BASE]
    TypeScript: ESLint, verificação de tipos e os testes existentes); **o build de
    produção roda sem erro** (não só o servidor de desenvolvimento, que pode
    esconder erros que só aparecem no build); e **todos os cenários possíveis do
-   que foi desenvolvido são testados antes de ir para produção**.
+   que foi desenvolvido são testados antes de ir para produção** (ver
+   [Estratégia de testes](#estratégia-de-testes)).
 
-   A verificação segue a divisão de [2.1](#quem-verifica-o-quê): o que é
+   A verificação segue a divisão de [2.1](#quem-verifica-o-quê-base): o que é
    automatizável fica com o agente, o que exige olho e dispositivo é humano.
    Quando existe **preview deploy** (ver [2.6](#26-estrutura-de-branches)), a
    verificação humana acontece nele, não em produção.
@@ -206,7 +208,7 @@ refatorações grandes, integrações externas. **Quando não.** Bug fix, ajuste
 copy, mudança pequena e óbvia: não precisam de spec.
 
 > O formato, o ciclo de vida e a localização das specs estão detalhados em
-> [Documentação e organização do repositório](#55-specs).
+> [Documentação e organização do repositório](#55-specs-spec-driven-development).
 
 ### 2.5 Commits: autoria e convenções
 
@@ -263,12 +265,32 @@ passa a valer.
 
 #### A estrutura em produção
 
-- **`main`** : o que está em produção. Nunca recebe commit direto.
+- **`main`** : o que está em produção. Nunca recebe commit direto (salvo a
+  exceção de projeto interno, logo abaixo).
 - **`dev`** (ou `develop`) : integração do que está pronto e ainda não foi
   publicado. Opcional em time pequeno, onde as feature branches podem ir direto
   para `main` via PR.
 - **`feature/*`, `fix/*`, `chore/*`** : uma branch por frente de trabalho, criada
   a partir de `dev` (ou de `main`, se não houver `dev`).
+
+#### Exceção: projetos internos e MVP
+
+Projeto **interno** (como o GDX) ou ainda em fase de MVP pode seguir em produção
+com um fluxo mais leve: **branch curta e merge rápido na `main`**, sem `dev` e
+sem esperar PR formal para mudança pequena. A exceção vale enquanto três
+condições se mantêm:
+
+- **Verificação antes do merge.** O [Definition of Done](#23-definition-of-done)
+  continua valendo: checagens automáticas e build passam antes de a mudança
+  chegar na `main`, porque o push publica.
+- **Volta rápida.** Um commit que reverte resolve qualquer problema em minutos, e
+  o time sabe fazer isso.
+- **Usuários próximos.** Quem usa é da casa e avisa na hora quando algo quebra.
+
+Projeto **[EXTERNO]** não tem essa exceção: nada é desenvolvido direto na
+`main`, e toda mudança passa por branch e PR. Quando um projeto interno passa a
+ter usuário externo, a estrutura completa vale a partir dali, com a transição
+datada como descrito acima.
 
 #### Como manusear
 
@@ -500,6 +522,28 @@ depender de o usuário relatar. [BASE, com mais peso em EXTERNO]
   por navegador e extensão. Filtre o ruído externo na entrada, para que o painel
   mostre só o que é acionável.
 
+#### Além de erros
+
+Captura de erro responde "o que quebrou". Ela não avisa quando o serviço inteiro
+caiu, quando uma rotina parou de rodar ou quando algo ficou lento sem falhar.
+
+- **Uptime monitorado de fora.** Um verificador externo chama periodicamente uma
+  rota de saúde (ou a página principal) e alerta quando ela não responde. Serviço
+  fora do ar não gera erro no próprio serviço. [EXTERNO]
+- **Rotina agendada com sinal de vida.** Cron e tarefa em segundo plano registram
+  cada execução com o resultado real (o que fizeram, quantos itens), e um alerta
+  dispara quando o registro não aparece no intervalo esperado. "Agendador marcou
+  sucesso" não significa que a função chamada respondeu. [BASE]
+- **Logs da plataforma antes dos seus.** Banco, funções serverless e hospedagem
+  já têm logs no painel do provedor. Saiba onde ficam e como filtrar antes de
+  precisar deles num incidente. [BASE]
+- **Alerta tem dono.** Todo alerta chega a alguém que sabe o que fazer com ele.
+  Alerta que ninguém lê treina o time a ignorar alertas. [BASE]
+- **Latência e volume dos fluxos críticos.** Para login, pagamento ou integração
+  principal, acompanhar tempo de resposta e quantidade de operações por período.
+  Queda brusca de volume costuma ser o primeiro sinal de quebra silenciosa.
+  [EXTERNO]
+
 ### 3.7 Entrega progressiva e feature flags
 
 **O que é.** Um mecanismo para ligar e desligar funcionalidade em produção sem
@@ -517,6 +561,49 @@ esquecida é dívida técnica que se acumula.
 
 > Toda flag deve ter um plano de remoção. Flag permanente é ramificação
 > permanente no código.
+
+### 3.8 Acessibilidade e performance [EXTERNO]
+
+**O que é.** Garantir que o produto funciona para qualquer pessoa, inclusive quem
+usa leitor de tela, navega só pelo teclado ou tem baixa visão, e que ele carrega
+rápido em aparelho e rede comuns, não só na máquina de quem desenvolve.
+
+**Para que serve.** Produto exposto na internet atende público que não
+escolhemos. Interface inacessível exclui gente (e, no Brasil, a Lei Brasileira de
+Inclusão exige acessibilidade em sites). Página lenta perde usuário antes de
+mostrar o que faz, e pesa no ranqueamento de busca.
+
+**Acessibilidade.** A régua é a **WCAG 2.2, nível AA**. Referência:
+https://www.w3.org/TR/WCAG22/
+
+- **HTML semântico primeiro**: botão é `button`, link é `a`, título é `h1` a
+  `h6`. ARIA só quando o elemento nativo não resolve.
+- **Todo campo tem rótulo**, toda imagem com conteúdo tem texto alternativo, e
+  todo botão só de ícone tem nome acessível.
+- **Contraste mínimo** de 4,5:1 para texto comum, conferido nos dois temas quando
+  houver claro e escuro.
+- **Teclado e foco**: tudo que se faz com o mouse se faz com o teclado, e o foco é
+  sempre visível.
+- **Verificação**: análise automática (axe ou Lighthouse) pega a parte mecânica;
+  uma passada com teclado e com o leitor de tela do sistema pega o resto.
+
+**Performance.** A régua são as **Core Web Vitals**, medidas no percentil 75 dos
+usuários reais: LCP até 2,5 s, INP até 200 ms, CLS até 0,1. Referência:
+https://web.dev/articles/vitals
+
+- **Orçamento de bundle.** Definir um teto para o JavaScript da página inicial e
+  tratar o estouro no build como alerta. Dependência nova entra sabendo quanto
+  pesa.
+- **Carregar sob demanda.** Telas e bibliotecas pesadas (editor, gráfico, mapa)
+  entram por divisão de código, não no pacote inicial.
+- **Imagens no tamanho certo**, em formato moderno e com dimensões declaradas,
+  para não empurrar o layout ao carregar.
+- **Medir em campo, não só no laboratório.** Lighthouse na máquina de quem
+  desenvolve é ponto de partida; o número que vale é o do usuário real.
+
+**Quando não.** Em ferramenta interna, os mesmos cuidados são boa prática, mas
+sem orçamento formal nem auditoria: o básico (semântica, rótulos, contraste) já
+resolve a maior parte.
 
 ---
 
@@ -620,6 +707,40 @@ Os itens acima são controles; esta é a prática de mantê-los vivos. Seguranç
 - **Revisão das premissas de risco.** Item adiado com justificativa condicional
   ("não urgente porque ainda não há usuários") precisa ser reavaliado quando a
   condição muda. Ver [2.7](#27-corte-de-versão).
+
+### Repositório e cadeia de dependências
+
+O código pode estar correto e ainda assim o projeto ficar exposto pelo caminho:
+uma conta sem segundo fator, um segredo que escapou num commit, uma dependência
+comprometida.
+
+- **2FA obrigatório na organização.** Toda conta com acesso aos repositórios da
+  empresa usa autenticação em dois fatores, exigida nas configurações da
+  organização, não deixada à escolha de cada um. [BASE]
+- **Secret scanning e push protection ligados.** O GitHub barra o push que
+  contém chave conhecida e avisa sobre o que já está no histórico. Segredo que
+  chegou ao repositório é considerado vazado: **troque a chave**, apagar o commit
+  não basta. [BASE] Referência:
+  https://docs.github.com/code-security/secret-scanning
+- **Alertas de dependência.** Dependabot (ou equivalente) avisa sobre CVE nas
+  dependências, e a auditoria da stack (`npm audit` em JS/TS) entra na cadência
+  da [governança](#governança-de-segurança-externo). A triagem segue a regra de
+  sempre: aceitar com racional registrado, nunca aplicar a correção automática
+  sem ler. [BASE] Referência:
+  https://docs.github.com/code-security/dependabot
+- **Lockfile versionado e instalação reprodutível.** O lockfile vai para o
+  repositório, e build e CI instalam a partir dele (`npm ci`), para que todo
+  ambiente rode exatamente as mesmas versões. [BASE]
+- **Dependência nova passa por um olhar.** Antes de instalar, conferir o nome
+  exato (pacotes com nome parecido são um ataque comum), quem mantém, se está
+  ativa e se executa script na instalação. Menos dependência é menos superfície.
+  [BASE]
+- **Branch protection na `main`.** Em projeto [EXTERNO], a branch principal exige
+  PR, bloqueia push direto e force push, e só aceita merge com as verificações
+  passando (ver [2.6](#26-estrutura-de-branches)). [EXTERNO]
+- **Token com escopo e validade.** Token de acesso pessoal e chave de deploy
+  recebem só o escopo necessário e data de expiração; o de quem saiu do time é
+  revogado no mesmo dia. [BASE]
 
 ---
 
@@ -729,7 +850,7 @@ amigável). **Quando atualizar.** No corte de uma versão. **Onde fica.** Raiz d
 repo. Detalhamento da régua de recorte em
 [5.3](#53-changelog-versionamento-e-releases).
 
-#### `WAYS-OF-WORKING`
+#### `WAYS-OF-WORKING.md`
 **O que é.** O documento que descreve **como o time trabalha**, independente do
 arquivo que está sendo tocado: o Definition of Done, a disciplina de
 documentação, os papéis, a triagem de quando algo vira ADR. **Para que serve.**
@@ -738,7 +859,7 @@ mudar uma prática de trabalho da equipe. **Onde fica.** Junto das regras da IA
 (ex.: `.claude/rules/ways-of-working.md`), por ser carregado como contexto em
 toda sessão.
 
-#### `COPILOT-BRIEFING`
+#### `COPILOT-BRIEFING.md`
 **O que é.** Um briefing consolidado do projeto para o agente de IA: visão geral,
 stack, decisões em vigor, particularidades. **Para que serve.** Dar ao copiloto
 um onboarding rápido em uma sessão nova, sem precisar reconstruir o contexto do
@@ -899,7 +1020,7 @@ precisar. **Onde ficam.** Em um diretório de regras do agente, por exemplo
 
 #### As rules se auto-alimentam
 
-O [relatório de fechamento](#relatório-de-fechamento-wrap) inclui os **candidatos
+O [relatório de fechamento](#relatório-de-fechamento-wrap-base) inclui os **candidatos
 a regra**: aprendizado descoberto durante a execução (comportamento de
 ferramenta, mudança de API de biblioteca, pegadinha do ambiente, convenção que
 evita um erro).
@@ -934,36 +1055,53 @@ documentação.
 
 ### Uso geral
 
-#### Cloudflare Workers, deploy [BASE]
-Plataforma de execução serverless na borda da Cloudflare. Serve para hospedar e
-rodar aplicações próximas do usuário, com escala automática. É o padrão de deploy
-da DPX porque os domínios da empresa estão centralizados na Cloudflare, o que
-simplifica DNS, certificados e gestão. Referência:
-https://developers.cloudflare.com/workers/
+#### Cloudflare, hospedagem e deploy [BASE]
+Os domínios da empresa estão centralizados na Cloudflare, o que simplifica DNS,
+certificados e gestão, e por isso ela é o padrão de hospedagem da DPX. Há dois
+caminhos, e cada projeto declara no README qual usa:
 
-#### Wrangler, CLI de deploy [BASE]
-A ferramenta de linha de comando da Cloudflare para desenvolver, testar e
-publicar Workers. Serve para fazer o build e o deploy a partir do ambiente local.
-É como, na prática, uma aplicação chega à Cloudflare quando o deploy é manual.
-Referência: https://developers.cloudflare.com/workers/wrangler/
+- **Cloudflare Pages com deploy automático**: o caminho atual do front dos
+  nossos apps web. É assim que roda o **GDX**: o repositório está ligado ao
+  Pages, e cada push na `main` faz o build e publica em produção, sem comando
+  manual. As demais branches geram ambientes de preview. Referência:
+  https://developers.cloudflare.com/pages/configuration/git-integration/
+- **Cloudflare Workers**: a opção para **projetos novos** que precisam de código
+  rodando na borda (API, SSR, rotas de servidor) além do front estático.
+  Referência: https://developers.cloudflare.com/workers/
 
-#### Cloudflare Builds, deploy automático [BASE]
-Integração da Cloudflare com o repositório: a cada push, o build e o deploy
-acontecem automaticamente, sem comando manual. Serve para eliminar o passo de
-publicação manual, e o risco de esquecer de publicar ou de publicar de uma
-máquina com estado local diferente. Combina com a
-[estrutura de branches](#26-estrutura-de-branches): a branch principal publica em
-produção, e as demais podem gerar ambientes de preview para verificação antes do
-merge. Referência: https://developers.cloudflare.com/workers/ci-cd/builds/
+Em ambos, o deploy automático elimina o passo de publicação manual, e o risco de
+esquecer de publicar ou de publicar de uma máquina com estado local diferente.
+Combina com a [estrutura de branches](#26-estrutura-de-branches): a branch
+principal publica em produção, e as demais geram preview para verificação antes
+do merge.
 
 > Com deploy automático, o gatilho de publicação é o **push**, não a tag. Ver a
 > nota em [5.3](#tags-e-releases-no-repositório).
+
+#### Wrangler, CLI da Cloudflare [BASE]
+A ferramenta de linha de comando da Cloudflare para desenvolver, testar e
+publicar Workers e projetos do Pages. Serve para rodar localmente e para o deploy
+manual quando o projeto não usa a integração com o repositório. Referência:
+https://developers.cloudflare.com/workers/wrangler/
+
+#### Cloudflare Builds, deploy automático de Workers [BASE]
+O equivalente da integração do Pages para projetos em Workers: a cada push, o
+build e o deploy acontecem automaticamente. Referência:
+https://developers.cloudflare.com/workers/ci-cd/builds/
 
 #### Supabase, banco de dados e autenticação [BASE]
 Plataforma sobre Postgres que entrega banco de dados, autenticação, RLS e uma API
 pronta. Serve como a camada de dados e de login dos projetos. É o padrão de banco
 da DPX. Tem CLI para migrations e painel para administração. Referência:
 https://supabase.com/docs
+
+O backend dos nossos apps (como o GDX) mora aqui: banco, autenticação e **edge
+functions**. As edge functions **não** sobem com o push do front: cada uma é
+publicada pela CLI (`npx supabase functions deploy <nome>`), e migration é
+aplicada à parte, antes do código que depende dela (ver
+[3.2](#32-banco-de-dados-e-migrations)). Quem altera uma função publica a função;
+o push na `main` só cuida do front. Referência:
+https://supabase.com/docs/guides/functions/deploy
 
 #### Sentry, monitoramento de erros [EXTERNO] (útil também interno)
 Serviço de captura e agregação de erros em tempo real, com stack trace, contexto
@@ -1045,12 +1183,12 @@ https://zod.dev
 #### Prettier, formatação de código
 Formatador automático para JavaScript, TypeScript e formatos adjacentes. Cumpre o
 princípio de formatação automática da
-[seção 3.4](#34-lint-formatação-e-qualidade). Referência: https://prettier.io
+[seção 3.4](#34-lint-formatação-e-qualidade-base). Referência: https://prettier.io
 
 #### ESLint, análise estática
 Ferramenta de análise estática para JavaScript e TypeScript, que aponta padrões
 problemáticos e bugs prováveis antes de rodar o código. Cumpre o princípio de
-análise estática da [seção 3.4](#34-lint-formatação-e-qualidade). Referência:
+análise estática da [seção 3.4](#34-lint-formatação-e-qualidade-base). Referência:
 https://eslint.org
 
 ---
@@ -1113,15 +1251,20 @@ já é definido onde aparece não se repete aqui.
 Itens que a DPX ainda não fechou e vai detalhar mais adiante. Ficam listados
 aqui, de forma honesta, em vez de fixar um padrão prematuro:
 
-- **Estratégia de testes.** A ferramenta e o conceito estão indicados (testes E2E
-  automatizados para fluxos críticos), mas a estratégia não: o que se testa, que
-  cobertura se persegue, quando os testes rodam, e em que ponto passam a ser
-  bloqueantes. Por ora, a regra continua sendo testar todos os cenários possíveis
-  do que está sendo desenvolvido antes de ir para produção.
-- **Regras de aprovação de PR.** A estrutura de branches está definida
-  ([2.6](#26-estrutura-de-branches)), mas quem aprova, quantas aprovações são
-  necessárias e quais verificações são bloqueantes ainda dependem do tamanho de
-  cada time.
+#### Estratégia de testes
+
+A ferramenta e o conceito estão indicados (testes E2E automatizados para fluxos
+críticos), mas a estratégia não: o que se testa, que cobertura se persegue,
+quando os testes rodam, e em que ponto passam a ser bloqueantes. Por ora, a regra
+continua sendo testar todos os cenários possíveis do que está sendo desenvolvido
+antes de ir para produção, como pede o
+[Definition of Done](#23-definition-of-done).
+
+#### Regras de aprovação de PR
+
+A estrutura de branches está definida ([2.6](#26-estrutura-de-branches)), mas
+quem aprova, quantas aprovações são necessárias e quais verificações são
+bloqueantes ainda dependem do tamanho de cada time.
 
 ---
 
